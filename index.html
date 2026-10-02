@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>С</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #090a0f;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+  </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let width = 0;
+  let height = 0;
+
+  const hearts = [];
+  const gravity = 0.34;
+  const air = 0.996;
+  const floorBounce = 0.55;
+  const colors = [
+    "#ff4d6d", "#ff6b9a", "#ff3b81", "#ff8fab",
+    "#c77dff", "#9b5de5", "#7b61ff", "#00d4ff",
+    "#00f5d4", "#7cff6b", "#ffd166", "#ff9f1c"
+  ];
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    width = window.innerWidth;
+    height = window.innerHeight;
+
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
+
+  function random(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function heartPath(ctx, x, y, size, rotation) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.beginPath();
+
+    const s = size;
+    ctx.moveTo(0, s * 0.82);
+    ctx.bezierCurveTo(
+      -s * 1.15, s * 0.08,
+      -s * 0.62, -s * 0.72,
+      0, -s * 0.18
+    );
+    ctx.bezierCurveTo(
+      s * 0.62, -s * 0.72,
+      s * 1.15, s * 0.08,
+      0, s * 0.82
+    );
+    ctx.closePath();
+
+    ctx.restore();
+  }
+
+  function spawn(x, y) {
+    // Больше сердец на ПК, чуть меньше на телефоне.
+    const count = Math.floor(random(7, 13));
+
+    for (let i = 0; i < count; i++) {
+      const angle = random(-Math.PI, 0);
+      const speed = random(2.5, 7.5);
+
+      hearts.push({
+        x: x + random(-4, 4),
+        y: y + random(-4, 4),
+
+        vx: Math.cos(angle) * speed + random(-1.5, 1.5),
+        vy: Math.sin(angle) * speed - random(0, 2),
+
+        size: random(7, 15),
+        rotation: random(-0.4, 0.4),
+        rotationSpeed: random(-0.08, 0.08),
+
+        gravity: random(0.25, 0.42),
+        drag: random(0.985, 0.998),
+
+        life: 1,
+        decay: random(0.0045, 0.008),
+        bounce: random(0.38, 0.68),
+
+        color: colors[Math.floor(Math.random() * colors.length)],
+        glow: random(8, 18)
+      });
+    }
+  }
+
+  function pointerDown(e) {
+    e.preventDefault();
+
+    const rect = canvas.getBoundingClientRect();
+
+    if (e.changedTouches) {
+      for (const touch of e.changedTouches) {
+        spawn(
+          touch.clientX - rect.left,
+          touch.clientY - rect.top
+        );
+      }
+    } else {
+      spawn(
+        e.clientX - rect.left,
+        e.clientY - rect.top
+      );
+    }
+  }
+
+  canvas.addEventListener("pointerdown", pointerDown, { passive: false });
+  canvas.addEventListener("touchstart", pointerDown, { passive: false });
+
+  function update() {
+    for (let i = hearts.length - 1; i >= 0; i--) {
+      const h = hearts[i];
+
+      h.vy += h.gravity;
+      h.vx *= h.drag;
+      h.vy *= h.drag;
+
+      h.x += h.vx;
+      h.y += h.vy;
+
+      h.rotation += h.rotationSpeed;
+      h.life -= h.decay;
+
+      // Левая / правая стенка
+      if (h.x - h.size < 0) {
+        h.x = h.size;
+        h.vx *= -h.bounce;
+      }
+
+      if (h.x + h.size > width) {
+        h.x = width - h.size;
+        h.vx *= -h.bounce;
+      }
+
+      // Пол
+      if (h.y + h.size > height) {
+        h.y = height - h.size;
+        h.vy *= -h.bounce;
+        h.vx *= 0.93;
+
+        // Небольшой "отскок" не должен быть вечным.
+        if (Math.abs(h.vy) < 1.1) {
+          h.vy = 0;
+        }
+      }
+
+      if (h.life <= 0 || h.y > height + 100) {
+        hearts.splice(i, 1);
+      }
+    }
+  }
+
+  function drawBackground() {
+    ctx.fillStyle = "#090a0f";
+    ctx.fillRect(0, 0, width, height);
+
+    // Едва заметное свечение в центре.
+    const gradient = ctx.createRadialGradient(
+      width / 2, height / 2, 0,
+      width / 2, height / 2, Math.max(width, height) * 0.7
+    );
+
+    gradient.addColorStop(0, "rgba(90, 30, 100, 0.08)");
+    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  function drawHeart(h) {
+    ctx.save();
+
+    ctx.globalAlpha = Math.max(0, Math.min(1, h.life));
+    ctx.shadowColor = h.color;
+    ctx.shadowBlur = h.glow;
+
+    ctx.fillStyle = h.color;
+    heartPath(ctx, h.x, h.y, h.size, h.rotation);
+    ctx.fill();
+
+    // Маленький блик
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.ellipse(
+      h.x - h.size * 0.32,
+      h.y - h.size * 0.30,
+      h.size * 0.15,
+      h.size * 0.25,
+      -0.55,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function draw() {
+    drawBackground();
+
+    for (const heart of hearts) {
+      drawHeart(heart);
+    }
+  }
+
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  loop();
+})();
+</script>
+</body>
+</html>
